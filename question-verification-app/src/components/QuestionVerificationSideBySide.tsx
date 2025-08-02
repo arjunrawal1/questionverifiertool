@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
@@ -198,6 +198,12 @@ export default function QuestionVerificationSideBySide({
 }: QuestionVerificationSideBySideProps) {
   const [loading, setLoading] = useState(false)
   const [optimisticApproved, setOptimisticApproved] = useState(false)
+
+  // Reset local states when verificationId changes
+  useEffect(() => {
+    setLoading(false)
+    setOptimisticApproved(false)
+  }, [verificationId])
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["question-verification-details", verificationId],

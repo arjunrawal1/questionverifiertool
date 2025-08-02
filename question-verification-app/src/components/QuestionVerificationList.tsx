@@ -1,13 +1,21 @@
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
-import { Select, SelectItem, SelectValue } from "./ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Skeleton } from "./ui/skeleton"
-import { getQuestionsForVerification } from "../lib/actions"
-import type { Filters, ActiveFilters } from "../types/question"
+import { getQuestionsForVerification, getAllTopics, getTopicQuestionCounts } from "../lib/actions"
+import type { QuestionVerification, Filters, ActiveFilters, Topic } from "../types/question"
 import { PiListChecks, PiTag, PiX, PiSortAscending } from "react-icons/pi"
+import { PiCaretDown } from "react-icons/pi"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+} from "./ui/dropdown-menu"
 
 const BATCH_SIZE = 20
 
@@ -28,6 +36,19 @@ export default function QuestionVerificationList({
   })
   const [activeFilters, setActiveFilters] = useState<ActiveFilters>({})
 
+  // Fetch topics with their subtopics
+  const { data: allTopics } = useQuery({
+    queryKey: ["all-topics"],
+    queryFn: getAllTopics,
+  })
+
+  // Get question counts for each topic/subtopic
+  const { data: topicQuestionCounts } = useQuery({
+    queryKey: ["topic-question-counts"],
+    queryFn: getTopicQuestionCounts,
+    enabled: !!allTopics && allTopics.length > 0,
+  })
+
   // Use real database query
   const { data: verificationsData, isLoading } = useQuery({
     queryKey: ["question-verifications", filters],
@@ -37,6 +58,7 @@ export default function QuestionVerificationList({
         difficulty: filters.difficulty,
         referenceSource: filters.referenceSource,
         challengeQuestion: filters.challengeQuestion,
+        topicIds: filters.topicIds,
         limit: BATCH_SIZE,
       })
     },
@@ -54,12 +76,60 @@ export default function QuestionVerificationList({
       active.challengeQuestion =
         filters.challengeQuestion === "challenge" ? "Challenge Questions" : "Regular Questions"
     }
+    if (filters.topicIds.length > 0) {
+      active.topics = `${filters.topicIds.length} topic${filters.topicIds.length === 1 ? "" : "s"} selected`
+    }
 
     setActiveFilters(active)
   }, [filters])
 
   const handleFilterChange = (key: keyof Filters, value: string | number | number[] | null) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
+  }
+
+  // Helper functions for topic selection
+  const handleTopicHeaderClick = (topic: Topic) => {
+    if (!topic.childTopics || topic.childTopics.length === 0) return
+
+    const subtopicIds = topic.childTopics.map((st) => st.id)
+    const allSelected = subtopicIds.every((id) => filters.topicIds.includes(id))
+
+    if (allSelected) {
+      // Deselect all subtopics of this topic
+      const newTopicIds = filters.topicIds.filter((id) => !subtopicIds.includes(id))
+      handleFilterChange("topicIds", newTopicIds)
+    } else {
+      // Select all subtopics of this topic
+      const newTopicIds = [...new Set([...filters.topicIds, ...subtopicIds])]
+      handleFilterChange("topicIds", newTopicIds)
+    }
+  }
+
+  const handleSubtopicToggle = (subtopicId: number) => {
+    const newTopicIds = filters.topicIds.includes(subtopicId)
+      ? filters.topicIds.filter((id) => id !== subtopicId)
+      : [...filters.topicIds, subtopicId]
+    handleFilterChange("topicIds", newTopicIds)
+  }
+
+  const areAllSubtopicsSelected = (topic: Topic) => {
+    if (!topic.childTopics || topic.childTopics.length === 0) return false
+    const subtopicIds = topic.childTopics.map((st) => st.id)
+    return subtopicIds.every((id) => filters.topicIds.includes(id))
+  }
+
+  const getSelectedSubtopicsCount = (topic: Topic) => {
+    if (!topic.childTopics || topic.childTopics.length === 0) return 0
+    const subtopicIds = topic.childTopics.map((st) => st.id)
+    return subtopicIds.filter((id) => filters.topicIds.includes(id)).length
+  }
+
+  const getQuestionCount = (topicId: number) => topicQuestionCounts?.[topicId] || 0
+
+  const getTopicTotalQuestionCount = (topic: Topic) => {
+    return topic.childTopics
+      ? topic.childTopics.reduce((sum, st) => sum + getQuestionCount(st.id), 0)
+      : getQuestionCount(topic.id)
   }
 
   const removeFilter = (filterKey: string) => {
@@ -77,6 +147,9 @@ export default function QuestionVerificationList({
         break
       case "challengeQuestion":
         newFilters.challengeQuestion = "all"
+        break
+      case "topics":
+        newFilters.topicIds = []
         break
     }
 
@@ -210,6 +283,158 @@ export default function QuestionVerificationList({
                 <SelectItem value="regular">Regular Questions</SelectItem>
               </Select>
             </div>
+          </div>
+        </div>
+
+        {/* Topic Filter - Horizontal columns with dropdowns */}
+        <div style={{ marginBottom: "1.5rem" }}>
+          <span className="text-sm font-medium mb-2" style={{ display: "block" }}>
+            Topics & Subtopics
+          </span>
+          <p className="text-xs text-muted" style={{ marginBottom: "0.5rem" }}>
+            Click topic headers to select all subtopics. Only subtopics can be individually
+            selected.
+          </p>
+          <div className="card" style={{ backgroundColor: "#f8fafc", padding: "1rem" }}>
+            {allTopics && allTopics.length > 0 ? (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                  gap: "1rem",
+                }}
+              >
+                {allTopics.filter((topic) => getTopicTotalQuestionCount(topic) > 0).map((topic) => (
+                  <div key={topic.id} style={{ minWidth: 0 }}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          style={{
+                            width: "100%",
+                            justifyContent: "space-between",
+                            gap: "0.5rem",
+                            height: "auto",
+                            padding: "0.75rem",
+                          }}
+                          onClick={() => handleTopicHeaderClick(topic)}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "flex-start",
+                              minWidth: 0,
+                              flex: 1,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontWeight: "500",
+                                fontSize: "0.875rem",
+                                textAlign: "left",
+                                width: "100%",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {topic.title}
+                            </span>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                                fontSize: "0.75rem",
+                                color: "#6b7280",
+                              }}
+                            >
+                              {topic.childTopics && topic.childTopics.length > 0 && (
+                                <>
+                                  <span>
+                                    {getSelectedSubtopicsCount(topic)}/{topic.childTopics.length}{" "}
+                                    selected
+                                  </span>
+                                  <span>•</span>
+                                </>
+                              )}
+                              <span>
+                                {topic.childTopics
+                                  ? topic.childTopics.reduce(
+                                      (sum, st) => sum + getQuestionCount(st.id),
+                                      0
+                                    )
+                                  : 0}{" "}
+                                questions
+                              </span>
+                            </div>
+                          </div>
+                          <PiCaretDown style={{ width: "1rem", height: "1rem", flexShrink: 0 }} />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      {topic.childTopics && topic.childTopics.length > 0 && (
+                        <DropdownMenuContent align="start" className="w-56">
+                          <DropdownMenuItem
+                            className="font-medium cursor-pointer text-blue-500"
+                            onClick={() => handleTopicHeaderClick(topic)}
+                          >
+                            {areAllSubtopicsSelected(topic) ? "Deselect All" : "Select All"}
+                          </DropdownMenuItem>
+                          <div
+                            style={{
+                              height: "1px",
+                              backgroundColor: "#e2e8f0",
+                              margin: "0.25rem 0",
+                            }}
+                          />
+                          {topic.childTopics.filter((subtopic) => getQuestionCount(subtopic.id) > 0).map((subtopic) => (
+                            <DropdownMenuCheckboxItem
+                              key={subtopic.id}
+                              checked={filters.topicIds.includes(subtopic.id)}
+                              onCheckedChange={() => handleSubtopicToggle(subtopic.id)}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  width: "100%",
+                                }}
+                              >
+                                <span>{subtopic.title}</span>
+                                <span
+                                  style={{
+                                    fontSize: "0.75rem",
+                                    color: "#6b7280",
+                                    marginLeft: "0.5rem",
+                                  }}
+                                >
+                                  ({getQuestionCount(subtopic.id)})
+                                </span>
+                              </div>
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuContent>
+                      )}
+                    </DropdownMenu>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "2rem",
+                }}
+              >
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ fontSize: "0.875rem", color: "#6b7280" }}>Loading topics...</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

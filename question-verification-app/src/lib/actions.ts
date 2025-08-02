@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless"
+import type { QuestionVerification, Topic } from "../types/question"
 
 // Use the admin Neon URL for this internal admin tool (like the main app does for admin operations)
 const DATABASE_URL = import.meta.env.VITE_NEON_ADMIN_URL || import.meta.env.NEON_ADMIN_URL_STAGING
@@ -111,6 +112,17 @@ export async function getQuestionsForVerification(filters: VerificationFilters =
     //   queryParams.push(filters.subjectId)
     //   paramIndex++
     // }
+
+    // Topic filtering - if topics are selected, only show questions that belong to those topics
+    if (filters.topicIds && filters.topicIds.length > 0) {
+      whereConditions.push(`qv.question_id IN (
+        SELECT tq.question_id
+        FROM topic_question tq
+        WHERE tq.topic_id = ANY($${paramIndex})
+      )`)
+      queryParams.push(filters.topicIds)
+      paramIndex++
+    }
 
     // Challenge question filter
     if (filters.challengeQuestion && filters.challengeQuestion !== "all") {
@@ -678,5 +690,80 @@ export async function loadQuestionDetails(verificationId: string) {
   } catch (error) {
     console.error("Error loading question details:", error)
     throw error
+  }
+}
+
+export async function getAllTopics(): Promise<Topic[]> {
+  try {
+    console.log("Fetching all topics with subtopics...")
+
+    // Get parent topics (topics with no parent)
+    const parentTopics = await sql`
+      SELECT id, title, slug, parent_topic_id, subject_id
+      FROM topic
+      WHERE parent_topic_id IS NULL
+      ORDER BY title
+    `
+
+    // Get all subtopics (child topics)
+    const childTopics = await sql`
+      SELECT id, title, slug, parent_topic_id, subject_id
+      FROM topic
+      WHERE parent_topic_id IS NOT NULL
+      ORDER BY title
+    `
+
+    // Build the topic hierarchy
+    const topicsWithChildren: Topic[] = parentTopics.map((parent: any) => ({
+      id: parent.id,
+      title: parent.title,
+      slug: parent.slug,
+      parentTopicId: parent.parent_topic_id,
+      subjectId: parent.subject_id,
+      childTopics: childTopics
+        .filter((child: any) => child.parent_topic_id === parent.id)
+        .map((child: any) => ({
+          id: child.id,
+          title: child.title,
+          slug: child.slug,
+          parentTopicId: child.parent_topic_id,
+          subjectId: child.subject_id,
+          childTopics: [], // For now, we'll just do 2 levels
+        })),
+    }))
+
+    console.log(`Found ${topicsWithChildren.length} parent topics`)
+    return topicsWithChildren
+  } catch (error) {
+    console.error("Error fetching topics:", error)
+    throw error
+  }
+}
+
+export async function getTopicQuestionCounts(): Promise<Record<number, number>> {
+  try {
+    console.log("Fetching topic question counts...")
+
+    // Count questions for each topic that are in question_verification
+    const questionCounts = await sql`
+      SELECT
+        tq.topic_id,
+        COUNT(*) as count
+      FROM topic_question tq
+      INNER JOIN question_verification qv ON tq.question_id = qv.question_id
+      GROUP BY tq.topic_id
+    `
+
+    // Convert to a map for easy lookup
+    const countsMap: Record<number, number> = {}
+    for (const item of questionCounts) {
+      countsMap[item.topic_id] = Number.parseInt(item.count)
+    }
+
+    console.log(`Found question counts for ${Object.keys(countsMap).length} topics`)
+    return countsMap
+  } catch (error) {
+    console.error("Error fetching topic question counts:", error)
+    return {}
   }
 }
