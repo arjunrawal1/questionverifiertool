@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { Select, SelectItem, SelectValue } from "./ui/select"
 import { Skeleton } from "./ui/skeleton"
 import { getQuestionsForVerification } from "../lib/actions"
-import type { QuestionVerification, Filters, ActiveFilters } from "../types/question"
+import type { Filters, ActiveFilters } from "../types/question"
 import { PiListChecks, PiTag, PiX, PiSortAscending } from "react-icons/pi"
 
 const BATCH_SIZE = 20
