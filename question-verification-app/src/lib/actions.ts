@@ -142,8 +142,11 @@ export async function getQuestionsForVerification(filters: VerificationFilters =
     console.log("WHERE clause:", whereClause)
     console.log("Query params:", queryParams)
 
-    // Get count based on filters
+    // Get count based on filters - add topic filtering support
     let countResult: any[]
+    
+    const hasTopicFilter = filters.topicIds && filters.topicIds.length > 0
+    
     if (whereConditions.length === 0) {
       // No filters - get all
       countResult = await sql`
@@ -152,32 +155,56 @@ export async function getQuestionsForVerification(filters: VerificationFilters =
         LEFT JOIN question q ON q.id = qv.question_id
         LEFT JOIN subject s ON s.id = q.subject_id
       `
-    } else if (whereConditions.length === 1 && filters.status && filters.status !== "all") {
-      // Status filter only
-      countResult = await sql`
-        SELECT COUNT(*) as count
-        FROM question_verification qv
-        LEFT JOIN question q ON q.id = qv.question_id
-        LEFT JOIN subject s ON s.id = q.subject_id
-        WHERE qv.status = ${filters.status}
-      `
-    } else if (whereConditions.length === 1 && filters.difficulty && filters.difficulty !== "all") {
-      // Difficulty filter only
-      countResult = await sql`
-        SELECT COUNT(*) as count
-        FROM question_verification qv
-        LEFT JOIN question q ON q.id = qv.question_id
-        LEFT JOIN subject s ON s.id = q.subject_id
-        WHERE q.difficulty = ${Number(filters.difficulty)}
-      `
+    } else if (hasTopicFilter) {
+      // Topic filtering - need to join with topic_question table
+      if (filters.status && filters.status !== "all" && filters.difficulty && filters.difficulty !== "all") {
+        // Topic + status + difficulty
+        countResult = await sql`
+          SELECT COUNT(DISTINCT qv.id) as count
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          INNER JOIN topic_question tq ON tq.question_id = qv.question_id
+          WHERE tq.topic_id = ANY(${filters.topicIds}) 
+            AND qv.status = ${filters.status} 
+            AND q.difficulty = ${Number(filters.difficulty)}
+        `
+      } else if (filters.status && filters.status !== "all") {
+        // Topic + status only
+        countResult = await sql`
+          SELECT COUNT(DISTINCT qv.id) as count
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          INNER JOIN topic_question tq ON tq.question_id = qv.question_id
+          WHERE tq.topic_id = ANY(${filters.topicIds}) 
+            AND qv.status = ${filters.status}
+        `
+      } else if (filters.difficulty && filters.difficulty !== "all") {
+        // Topic + difficulty only
+        countResult = await sql`
+          SELECT COUNT(DISTINCT qv.id) as count
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          INNER JOIN topic_question tq ON tq.question_id = qv.question_id
+          WHERE tq.topic_id = ANY(${filters.topicIds}) 
+            AND q.difficulty = ${Number(filters.difficulty)}
+        `
+      } else {
+        // Topic only
+        countResult = await sql`
+          SELECT COUNT(DISTINCT qv.id) as count
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          INNER JOIN topic_question tq ON tq.question_id = qv.question_id
+          WHERE tq.topic_id = ANY(${filters.topicIds})
+        `
+      }
     } else {
-      // Multiple filters - construct query for most common combinations
-      if (
-        filters.status &&
-        filters.status !== "all" &&
-        filters.difficulty &&
-        filters.difficulty !== "all"
-      ) {
+      // Non-topic filters - use existing logic
+      if (filters.status && filters.status !== "all" && filters.difficulty && filters.difficulty !== "all") {
         countResult = await sql`
           SELECT COUNT(*) as count
           FROM question_verification qv
@@ -185,8 +212,24 @@ export async function getQuestionsForVerification(filters: VerificationFilters =
           LEFT JOIN subject s ON s.id = q.subject_id
           WHERE qv.status = ${filters.status} AND q.difficulty = ${Number(filters.difficulty)}
         `
+      } else if (filters.status && filters.status !== "all") {
+        countResult = await sql`
+          SELECT COUNT(*) as count
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          WHERE qv.status = ${filters.status}
+        `
+      } else if (filters.difficulty && filters.difficulty !== "all") {
+        countResult = await sql`
+          SELECT COUNT(*) as count
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          WHERE q.difficulty = ${Number(filters.difficulty)}
+        `
       } else {
-        // Fallback to no filter for complex cases
+        // Fallback for other single filters
         countResult = await sql`
           SELECT COUNT(*) as count
           FROM question_verification qv
@@ -199,8 +242,9 @@ export async function getQuestionsForVerification(filters: VerificationFilters =
     const total = countResult[0]?.count || 0
     console.log("Total matching verifications:", total)
 
-    // Get verifications based on filters
+    // Get verifications based on filters - add topic filtering support
     let verifications: any[]
+    
     if (whereConditions.length === 0) {
       // No filters - get all
       verifications = await sql`
@@ -229,72 +273,136 @@ export async function getQuestionsForVerification(filters: VerificationFilters =
         ORDER BY qv.created_at DESC
         LIMIT ${limit + 1}
       `
-    } else if (whereConditions.length === 1 && filters.status && filters.status !== "all") {
-      // Status filter only
-      verifications = await sql`
-        SELECT
-          qv.id,
-          qv.question_id,
-          qv.reference_question_id,
-          qv.approver_user_ids,
-          qv.rejected_user_ids,
-          qv.reference_source,
-          qv.status,
-          qv.metadata,
-          qv.created_at,
-          qv.updated_at,
-          q.specification as question_specification,
-          q.difficulty as question_difficulty,
-          q.question_type,
-          q.level as question_level,
-          q.paper as question_paper,
-          q.subject_id as question_subject_id,
-          s.title as subject_title,
-          s.slug as subject_slug
-        FROM question_verification qv
-        LEFT JOIN question q ON q.id = qv.question_id
-        LEFT JOIN subject s ON s.id = q.subject_id
-        WHERE qv.status = ${filters.status}
-        ORDER BY qv.created_at DESC
-        LIMIT ${limit + 1}
-      `
-    } else if (whereConditions.length === 1 && filters.difficulty && filters.difficulty !== "all") {
-      // Difficulty filter only
-      verifications = await sql`
-        SELECT
-          qv.id,
-          qv.question_id,
-          qv.reference_question_id,
-          qv.approver_user_ids,
-          qv.rejected_user_ids,
-          qv.reference_source,
-          qv.status,
-          qv.metadata,
-          qv.created_at,
-          qv.updated_at,
-          q.specification as question_specification,
-          q.difficulty as question_difficulty,
-          q.question_type,
-          q.level as question_level,
-          q.paper as question_paper,
-          q.subject_id as question_subject_id,
-          s.title as subject_title,
-          s.slug as subject_slug
-        FROM question_verification qv
-        LEFT JOIN question q ON q.id = qv.question_id
-        LEFT JOIN subject s ON s.id = q.subject_id
-        WHERE q.difficulty = ${Number(filters.difficulty)}
-        ORDER BY qv.created_at DESC
-        LIMIT ${limit + 1}
-      `
+    } else if (hasTopicFilter) {
+      // Topic filtering - need to join with topic_question table
+      if (filters.status && filters.status !== "all" && filters.difficulty && filters.difficulty !== "all") {
+        // Topic + status + difficulty
+        verifications = await sql`
+          SELECT DISTINCT
+            qv.id,
+            qv.question_id,
+            qv.reference_question_id,
+            qv.approver_user_ids,
+            qv.rejected_user_ids,
+            qv.reference_source,
+            qv.status,
+            qv.metadata,
+            qv.created_at,
+            qv.updated_at,
+            q.specification as question_specification,
+            q.difficulty as question_difficulty,
+            q.question_type,
+            q.level as question_level,
+            q.paper as question_paper,
+            q.subject_id as question_subject_id,
+            s.title as subject_title,
+            s.slug as subject_slug
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          INNER JOIN topic_question tq ON tq.question_id = qv.question_id
+          WHERE tq.topic_id = ANY(${filters.topicIds}) 
+            AND qv.status = ${filters.status} 
+            AND q.difficulty = ${Number(filters.difficulty)}
+          ORDER BY qv.created_at DESC
+          LIMIT ${limit + 1}
+        `
+      } else if (filters.status && filters.status !== "all") {
+        // Topic + status only
+        verifications = await sql`
+          SELECT DISTINCT
+            qv.id,
+            qv.question_id,
+            qv.reference_question_id,
+            qv.approver_user_ids,
+            qv.rejected_user_ids,
+            qv.reference_source,
+            qv.status,
+            qv.metadata,
+            qv.created_at,
+            qv.updated_at,
+            q.specification as question_specification,
+            q.difficulty as question_difficulty,
+            q.question_type,
+            q.level as question_level,
+            q.paper as question_paper,
+            q.subject_id as question_subject_id,
+            s.title as subject_title,
+            s.slug as subject_slug
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          INNER JOIN topic_question tq ON tq.question_id = qv.question_id
+          WHERE tq.topic_id = ANY(${filters.topicIds}) 
+            AND qv.status = ${filters.status}
+          ORDER BY qv.created_at DESC
+          LIMIT ${limit + 1}
+        `
+      } else if (filters.difficulty && filters.difficulty !== "all") {
+        // Topic + difficulty only
+        verifications = await sql`
+          SELECT DISTINCT
+            qv.id,
+            qv.question_id,
+            qv.reference_question_id,
+            qv.approver_user_ids,
+            qv.rejected_user_ids,
+            qv.reference_source,
+            qv.status,
+            qv.metadata,
+            qv.created_at,
+            qv.updated_at,
+            q.specification as question_specification,
+            q.difficulty as question_difficulty,
+            q.question_type,
+            q.level as question_level,
+            q.paper as question_paper,
+            q.subject_id as question_subject_id,
+            s.title as subject_title,
+            s.slug as subject_slug
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          INNER JOIN topic_question tq ON tq.question_id = qv.question_id
+          WHERE tq.topic_id = ANY(${filters.topicIds}) 
+            AND q.difficulty = ${Number(filters.difficulty)}
+          ORDER BY qv.created_at DESC
+          LIMIT ${limit + 1}
+        `
+      } else {
+        // Topic only
+        verifications = await sql`
+          SELECT DISTINCT
+            qv.id,
+            qv.question_id,
+            qv.reference_question_id,
+            qv.approver_user_ids,
+            qv.rejected_user_ids,
+            qv.reference_source,
+            qv.status,
+            qv.metadata,
+            qv.created_at,
+            qv.updated_at,
+            q.specification as question_specification,
+            q.difficulty as question_difficulty,
+            q.question_type,
+            q.level as question_level,
+            q.paper as question_paper,
+            q.subject_id as question_subject_id,
+            s.title as subject_title,
+            s.slug as subject_slug
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          INNER JOIN topic_question tq ON tq.question_id = qv.question_id
+          WHERE tq.topic_id = ANY(${filters.topicIds})
+          ORDER BY qv.created_at DESC
+          LIMIT ${limit + 1}
+        `
+      }
     } else {
-      // Multiple filters - construct query for most common combinations
-      if (
-        filters.status &&
-        filters.status !== "all" &&
-        filters.difficulty &&
-        filters.difficulty !== "all"
-      ) {
+      // Non-topic filters - use existing logic
+      if (filters.status && filters.status !== "all" && filters.difficulty && filters.difficulty !== "all") {
         verifications = await sql`
           SELECT
             qv.id,
@@ -322,8 +430,64 @@ export async function getQuestionsForVerification(filters: VerificationFilters =
           ORDER BY qv.created_at DESC
           LIMIT ${limit + 1}
         `
+      } else if (filters.status && filters.status !== "all") {
+        verifications = await sql`
+          SELECT
+            qv.id,
+            qv.question_id,
+            qv.reference_question_id,
+            qv.approver_user_ids,
+            qv.rejected_user_ids,
+            qv.reference_source,
+            qv.status,
+            qv.metadata,
+            qv.created_at,
+            qv.updated_at,
+            q.specification as question_specification,
+            q.difficulty as question_difficulty,
+            q.question_type,
+            q.level as question_level,
+            q.paper as question_paper,
+            q.subject_id as question_subject_id,
+            s.title as subject_title,
+            s.slug as subject_slug
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          WHERE qv.status = ${filters.status}
+          ORDER BY qv.created_at DESC
+          LIMIT ${limit + 1}
+        `
+      } else if (filters.difficulty && filters.difficulty !== "all") {
+        verifications = await sql`
+          SELECT
+            qv.id,
+            qv.question_id,
+            qv.reference_question_id,
+            qv.approver_user_ids,
+            qv.rejected_user_ids,
+            qv.reference_source,
+            qv.status,
+            qv.metadata,
+            qv.created_at,
+            qv.updated_at,
+            q.specification as question_specification,
+            q.difficulty as question_difficulty,
+            q.question_type,
+            q.level as question_level,
+            q.paper as question_paper,
+            q.subject_id as question_subject_id,
+            s.title as subject_title,
+            s.slug as subject_slug
+          FROM question_verification qv
+          LEFT JOIN question q ON q.id = qv.question_id
+          LEFT JOIN subject s ON s.id = q.subject_id
+          WHERE q.difficulty = ${Number(filters.difficulty)}
+          ORDER BY qv.created_at DESC
+          LIMIT ${limit + 1}
+        `
       } else {
-        // Fallback to no filter for complex cases
+        // Fallback for other single filters
         verifications = await sql`
           SELECT
             qv.id,
