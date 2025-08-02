@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { Select, SelectItem, SelectValue } from "./ui/select"
 import { Skeleton } from "./ui/skeleton"
 import { getQuestionsForVerification, getAllTopics, getTopicQuestionCounts } from "../lib/actions"
-import type { QuestionVerification, Filters, ActiveFilters, Topic } from "../types/question"
+import type { Filters, ActiveFilters, Topic } from "../types/question"
 import { PiListChecks, PiTag, PiX, PiSortAscending } from "react-icons/pi"
 import { PiCaretDown } from "react-icons/pi"
 import {
@@ -17,7 +17,7 @@ import {
   DropdownMenuCheckboxItem,
 } from "./ui/dropdown-menu"
 
-const BATCH_SIZE = 20
+const BATCH_SIZE = 50
 
 interface QuestionVerificationListProps {
   onSelectVerification: (verificationId: string, verificationsList: any[]) => void
@@ -62,6 +62,8 @@ export default function QuestionVerificationList({
         limit: BATCH_SIZE,
       })
     },
+    staleTime: 10 * 60 * 1000, // 10 minutes - longer cache for question lists
+    gcTime: 20 * 60 * 1000, // 20 minutes - keep in cache when switching views
   })
 
   // Update active filters display

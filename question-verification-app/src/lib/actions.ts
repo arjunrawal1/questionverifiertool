@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless"
-import type { QuestionVerification, Topic } from "../types/question"
+import type { Topic } from "../types/question"
 
 // Use the admin Neon URL for this internal admin tool (like the main app does for admin operations)
 const DATABASE_URL = import.meta.env.VITE_NEON_ADMIN_URL || import.meta.env.NEON_ADMIN_URL_STAGING

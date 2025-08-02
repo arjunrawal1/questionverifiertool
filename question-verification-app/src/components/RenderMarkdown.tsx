@@ -1,4 +1,4 @@
-import type React from "react"
+// Removed unused React import
 import ReactMarkdown, { type Components } from "react-markdown"
 import rehypeKatex from "rehype-katex"
 import rehypeRaw from "rehype-raw"

@@ -19,28 +19,45 @@ function App() {
   const [currentView, setCurrentView] = useState<"list" | "detail">("list")
   const [selectedVerificationId, setSelectedVerificationId] = useState<string | null>(null)
   const [verificationsList, setVerificationsList] = useState<any[]>([])
+  const [showBatchEndMessage, setShowBatchEndMessage] = useState(false)
 
   const handleSelectVerification = (verificationId: string, verificationsList: any[]) => {
     setSelectedVerificationId(verificationId)
     setVerificationsList(verificationsList)
+    setShowBatchEndMessage(false)
     setCurrentView("detail")
   }
 
   const handleBackToList = () => {
     setCurrentView("list")
     setSelectedVerificationId(null)
+    setShowBatchEndMessage(false)
   }
 
   const handleNextQuestion = () => {
     if (!selectedVerificationId || verificationsList.length === 0) return
 
     const currentIndex = verificationsList.findIndex((v) => v.id === selectedVerificationId)
-    const nextIndex = (currentIndex + 1) % verificationsList.length
-    const nextVerification = verificationsList[nextIndex]
+    const nextIndex = currentIndex + 1
 
+    // Check if we've reached the end of the batch
+    if (nextIndex >= verificationsList.length) {
+      setShowBatchEndMessage(true)
+      return
+    }
+
+    const nextVerification = verificationsList[nextIndex]
     if (nextVerification) {
       setSelectedVerificationId(nextVerification.id)
+      setShowBatchEndMessage(false)
     }
+  }
+
+  // Helper function to get current question position
+  const getCurrentQuestionPosition = () => {
+    if (!selectedVerificationId || verificationsList.length === 0) return { current: 0, total: 0 }
+    const currentIndex = verificationsList.findIndex((v) => v.id === selectedVerificationId)
+    return { current: currentIndex + 1, total: verificationsList.length }
   }
 
   return (
@@ -81,6 +98,8 @@ function App() {
               verificationId={selectedVerificationId}
               onBack={handleBackToList}
               onNext={handleNextQuestion}
+              questionPosition={getCurrentQuestionPosition()}
+              showBatchEndMessage={showBatchEndMessage}
             />
           )
         )}

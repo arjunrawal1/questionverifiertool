@@ -17,6 +17,8 @@ interface QuestionVerificationSideBySideProps {
   verificationId: string
   onBack: () => void
   onNext: () => void
+  questionPosition: { current: number; total: number }
+  showBatchEndMessage: boolean
 }
 
 interface QuestionDisplayProps {
@@ -195,6 +197,8 @@ export default function QuestionVerificationSideBySide({
   verificationId,
   onBack,
   onNext,
+  questionPosition,
+  showBatchEndMessage,
 }: QuestionVerificationSideBySideProps) {
   const [loading, setLoading] = useState(false)
   const [optimisticApproved, setOptimisticApproved] = useState(false)
@@ -208,7 +212,8 @@ export default function QuestionVerificationSideBySide({
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["question-verification-details", verificationId],
     queryFn: () => loadQuestionDetails(verificationId),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 15 * 60 * 1000, // 15 minutes - keep questions fresh longer
+    gcTime: 30 * 60 * 1000, // 30 minutes - keep in cache longer for faster back/forward navigation
   })
 
   const verification = data?.verification
@@ -336,10 +341,17 @@ export default function QuestionVerificationSideBySide({
     <div style={{ padding: "1.5rem", maxWidth: "none" }}>
       {/* Header */}
       <div className="flex justify-between items-center" style={{ marginBottom: "2rem" }}>
-        <Button variant="outline" onClick={onBack}>
-          <PiArrowLeft style={{ width: "1rem", height: "1rem", marginRight: "0.5rem" }} />
-          Back to List
-        </Button>
+        <div className="flex items-center gap-4">
+          <Button variant="outline" onClick={onBack}>
+            <PiArrowLeft style={{ width: "1rem", height: "1rem", marginRight: "0.5rem" }} />
+            Back to List
+          </Button>
+          {questionPosition.total > 0 && (
+            <div style={{ fontSize: "0.875rem", color: "#6b7280", fontWeight: "500" }}>
+              Question {questionPosition.current} of {questionPosition.total} in this batch
+            </div>
+          )}
+        </div>
         <div className="flex gap-2 items-center">
           <Badge className={getStatusColor(verification.status)} variant="secondary">
             {verification.status.charAt(0).toUpperCase() + verification.status.slice(1)}
@@ -461,6 +473,7 @@ export default function QuestionVerificationSideBySide({
         <Button
           onClick={onNext}
           variant="outline"
+          disabled={showBatchEndMessage}
           style={{
             flex: "1",
             maxWidth: "12rem",
@@ -468,9 +481,27 @@ export default function QuestionVerificationSideBySide({
           }}
         >
           <PiArrowRight style={{ width: "1.25rem", height: "1.25rem", marginRight: "0.5rem" }} />
-          Next Question
+          {showBatchEndMessage ? "Batch Complete!" : "Next Question"}
         </Button>
       </div>
+
+      {/* Batch end message */}
+      {showBatchEndMessage && (
+        <div 
+          style={{
+            backgroundColor: "#f0f9ff",
+            border: "1px solid #0ea5e9",
+            borderRadius: "12px",
+            padding: "1rem",
+            marginBottom: "2rem",
+            textAlign: "center"
+          }}
+        >
+          <p style={{ color: "#0369a1", fontWeight: "500", margin: "0" }}>
+            🎉 You've completed all {questionPosition.total} questions in this batch! Go back to load more questions.
+          </p>
+        </div>
+      )}
 
       {/* Additional info */}
       <div
