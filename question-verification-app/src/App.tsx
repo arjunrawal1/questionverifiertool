@@ -81,7 +81,7 @@ function App() {
                     marginBottom: "0.5rem",
                   }}
                 >
-                  Question Verification
+                  TutorLion SAT Question Verification
                 </h1>
                 <p style={{ color: "#6b7280" }}>Review and approve AI-generated questions</p>
               </div>
